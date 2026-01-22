@@ -5,6 +5,44 @@ const UpdateFeedbacks = require('./feedbacks')
 const UpdateVariableDefinitions = require('./variables')
 const presets = require('./presets')
 
+const RESPONSE_MAP = [
+	{
+		regex: /^PW(.+)$/,
+		variable: 'master_power',
+		parser: (m) => m[1],
+	},
+	{
+		regex: /^MV(\d{2,3})$/,
+		variable: 'master_volume',
+		parser: (m) => parseInt(m[1], 10),
+	},
+	{
+		regex: /^MU(.+)$/,
+		variable: 'master_mute',
+		parser: (m) => m[1],
+	},
+	{
+		regex: /^SI(.+)$/,
+		variable: 'source_input',
+		parser: (m) => m[1],
+	},
+	// {
+	// 	regex: /^Z2(.+)$/,
+	// 	variable: 'z2_power',
+	// 	parser: (m) => m[1],
+	// },
+	// {
+	// 	regex: /^Z2(.+)$/,
+	// 	variable: 'z2_source', // TODO
+	// 	parser: (m) => m[1],
+	// },
+	{
+		regex: /^Z2MU(.+)$/,
+		variable: 'z2_mute',
+		parser: (m) => m[1],
+	},
+
+]
 
 class ModuleInstance extends InstanceBase {
 	constructor(internal) {
@@ -36,15 +74,40 @@ class ModuleInstance extends InstanceBase {
 			this.socket.on('status_change', (status, message) => {
 				this.updateStatus(status, message)
 			})
-
 			this.socket.on('error', (err) => {
 				this.updateStatus(InstanceStatus.ConnectionFailure, err.message)
 				this.log('error', 'Network error: ' + err.message)
 			})
-
+			this.socket.on('data', (data) => {
+				this.receiveResponse(data)
+			})
 			
 		} else {
 			this.updateStatus(InstanceStatus.BadConfig)
+		}
+	}
+
+	async receiveResponse(data) {
+		const lines = data.toString().split('\r')
+
+		for (const line of lines) {
+			if (!line) continue
+
+			this.log('debug', `RX: ${line}`)
+
+			for (const def of RESPONSE_MAP) {
+				const match = line.match(def.regex)
+				if (match) {
+					const value = def.parser(match)
+
+					this.setVariableValues({
+						[def.variable]: value,
+					})
+
+					this.checkFeedbacks()
+					break
+				}
+			}
 		}
 	}
 
